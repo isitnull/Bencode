@@ -12,5 +12,4 @@ namespace BenDecoder.src.Exceptions
         {
         }
     }
-
 }

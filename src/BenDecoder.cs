@@ -1,10 +1,12 @@
-﻿using BenDecoder.src;
+﻿using System;
+using BenDecoder.src;
 using BenDecoder.src.Constants;
 using BenDecoder.src.Exceptions;
 using BenDecoder.src.ExtensionMethods;
 using BenDecoder.src.Interfaces;
 using BenDecoder.src.Types;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -24,6 +26,11 @@ namespace Bencoder
 
             while(! await _bStream.AtEndOfStream())
             {
+                
+                // ("l", "d", "i", "1337:")
+                var tokenString = GetNextSignificantTokenString();
+                // var decoder = DecoderFactory.GetDecoder(tokens);
+                // result.add(decoder.GetValue(_bstream))
                 IDecodeble decoded = await Decode(await _bStream.Peek());
 
                 result.Add(decoded);
@@ -34,15 +41,64 @@ namespace Bencoder
 
         }
 
+        private async Task<string> GetNextSignificantTokenString()
+        {
+            if (await _bStream.Next())
+            {
+                char c =  _bStream.CurrentChar;
+                switch (c)
+                {
+                    case 'l':
+                    case 'd':
+                    case 'i':
+                        return c.ToString();
+                    default:
+                        StringBuilder stringLength = new();
+            
+                        stringLength.Append(c);
+                        while(await _bStream.Next()  && char.IsDigit(_bStream.CurrentChar))
+                        {
+                            stringLength.Append(_bStream.CurrentChar);
+                        }
+
+                        return $"{stringLength}{_bStream.CurrentChar}";
+                }
+                
+            }
+
+            throw new SerializationException("Bad Stuff");
+        }
+
+
         private async Task<IDecodeble> Decode(char currentCharacter)
         {
+
+            string tokens = "l";
+            switch (tokens)
+            {
+                case "l":
+                    DecodeList();
+                    break;
+                case "d":
+                    DecodeDictionary();
+                    break;
+                case "i":
+                    DecodeInteger();
+                    break;
+                default:
+                    
+                    DecodeByteString(Int32.Parse(tokens));
+                    break;
+
+            }
+            
             return currentCharacter switch
             {
-                char _ when currentCharacter.IsIntegerStart() => await this.DecodeInteger(),
-                char _ when currentCharacter.IsByteStringStart() => await this.DecodeByteString(),
-                char _ when currentCharacter.IsListStart() => await this.DecodeList(),
-                char _ when currentCharacter.IsDictionaryStart() => await this.DecodeDictionary(),
-                _ => throw new BendecoderException($"Unrecognized start of token {currentCharacter}")
+                char _ when currentCharacter.IsIntegerStart() => await DecodeInteger(),
+                char _ when currentCharacter.IsByteStringStart() => await DecodeByteString(),
+                char _ when currentCharacter.IsListStart() => await DecodeList(),
+                char _ when currentCharacter.IsDictionaryStart() => await DecodeDictionary(),
+                _ => throw new FormatException($"Unrecognized start of token {currentCharacter}")
             };
         }
 
@@ -51,7 +107,7 @@ namespace Bencoder
             var dict = new DecodedDictionary();
 
             var currentCharacter = await _bStream.GetNextCharacter();
-
+            
             while(currentCharacter != Constants.END)
             {
                 // decode bytestring for the key
@@ -82,14 +138,14 @@ namespace Bencoder
                 currentChar = await _bStream.GetNextCharacter();
                 if (currentChar == '0')
                 {
-                    throw new BendecoderException("-0 is not allowed in Integers");
+                    throw new SerializationException("-0 is not allowed in Integers");
                 }
             } else if (currentChar == '0')
             {
                 currentChar = await _bStream.GetNextCharacter();
                 if (currentChar != 'e')
                 {
-                    throw new BendecoderException("No leading 0's allowed");
+                    throw new SerializationException("No leading 0's allowed");
                 }
                 return new DecodedInteger(0);
             }
@@ -108,14 +164,12 @@ namespace Bencoder
            
             StringBuilder stringLength = new();
             
-            stringLength.Append(await _bStream.GetNextCharacter());
+            stringLength.Append(_bStream.CurrentChar);
             // keep going until we hit a non digit
 
-            char currentCharacter = await _bStream.GetNextCharacter();
-            while(char.IsDigit(currentCharacter))
+            while(await _bStream.Next()  && char.IsDigit(_bStream.CurrentChar))
             {
-                stringLength.Append(currentCharacter);
-                currentCharacter = await _bStream.GetNextCharacter();
+                stringLength.Append(_bStream.CurrentChar);
             }
 
             if(!int.TryParse(stringLength.ToString(), out int length))

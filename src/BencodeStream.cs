@@ -33,7 +33,7 @@ namespace BenDecoder.src
 
             if (read != 1)
             {
-                throw new BendecoderException("Unexpectedly reached end of stream trying to Peek");
+                throw new EndOfStreamException("Unexpectedly reached end of stream trying to Peek");
             }
             // Might throw here if the stream isn't seekable
             _stream.Position = --_stream.Position;
@@ -57,19 +57,30 @@ namespace BenDecoder.src
             int read = await _stream.ReadAsync(a);
             if (read != 1)
             {
-                throw new BendecoderException("Unexpectedly reached end of stream");
+                throw new EndOfStreamException("Unexpectedly reached end of stream");
             }
 
             return _encoding.GetChars(a)[0];
         }
-
+        public char CurrentChar => _encoding.GetChars(new[] {CurrentByte})[0];
+        public byte CurrentByte { get; private set; }
+        public async Task<bool> Next()
+        {
+            byte[] a = new byte[1];
+            int read = await _stream.ReadAsync(a);
+            
+            if (read != 1) return false;
+            
+            CurrentByte = a.First();
+            return true;
+        }
         public async Task<byte[]> GetBytes(int numBytes)
         {
             byte[] buffer = new byte[numBytes];
             var bytesRead = await _stream.ReadAsync(buffer);
             if (bytesRead != numBytes)
             {
-                throw new BendecoderException($"Unexepectedly reached end of stream while reading {numBytes} bytes");
+                throw new EndOfStreamException($"Unexpectedly reached end of stream while reading {numBytes} bytes");
             }
             return buffer;
         }
